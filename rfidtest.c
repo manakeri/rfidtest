@@ -85,27 +85,28 @@ void send_keycode(int fd, int keycode)
     printf("%i = %i\n", keycode, ecode);
 #endif
 
+// press key
     memset(&event, 0, sizeof(struct input_event));
     event.type = EV_KEY;
     event.code = ecode;
     event.value = 1;
     if (write(fd, &event, sizeof(struct input_event)) < 0)
 	die("error: write event");
-
+// sync
     memset(&event, 0, sizeof(struct input_event));
     event.type = EV_SYN;
     event.code = 0;
     event.value = 0;
     if (write(fd, &event, sizeof(struct input_event)) < 0)
 	die("error: write event");
-
+// release key
     memset(&event, 0, sizeof(struct input_event));
     event.type = EV_KEY;
     event.code = ecode;
     event.value = 0;
     if (write(fd, &event, sizeof(struct input_event)) < 0)
 	die("error: write event");
-
+// sync
     memset(&event, 0, sizeof(struct input_event));
     event.type = EV_SYN;
     event.code = 0;
@@ -130,13 +131,14 @@ int main(int argc, char *argv[])
     fd = open("/dev/uinput", O_WRONLY);
     if (fd < 0)
 	die("uinput open:");
+// enable uinput key output	
     if (ioctl(fd, UI_SET_EVBIT, EV_KEY) < 0)
 	die("error: UI_SET_EVBIT");
-    for (i = KEY_RESERVED; i < KEY_UNKNOWN; i++) {
-
+// enable way too many keys...	
+    for (i = KEY_RESERVED; i < KEY_UNKNOWN; i++)
 	if (ioctl(fd, UI_SET_KEYBIT, i) < 0)
 	    die("error: UI_SET_KEYBIT");
-    }
+// create uinput device
     memset(&uidev, 0, sizeof(struct uinput_user_dev));
     snprintf(uidev.name, UINPUT_MAX_NAME_SIZE, "rfidtest");
     uidev.id.bustype = BUS_USB;
@@ -147,7 +149,6 @@ int main(int argc, char *argv[])
 	die("error: write uidev");
     if (ioctl(fd, UI_DEV_CREATE) < 0)
 	die("error: ioctl UI_DEV_CREATE");
-
 // search rfid reader
     devs = hid_enumerate(0x0, 0x0);
     cur_dev = devs;
@@ -164,10 +165,10 @@ int main(int argc, char *argv[])
 	printf("  Interface:    %d\n", cur_dev->interface_number);
 	printf("\n");
 #endif
-
+// in case found rfid reader 
 	if (cur_dev->vendor_id == 0x1667 && cur_dev->product_id == 0x0026) {
 	    handle = hid_open_path(cur_dev->path);
-
+// read rfid code
 	    hid_write(handle, command, 64);
 	    hid_read(handle, buf, 64);
 	    res = hid_read(handle, buf, 64);
@@ -175,7 +176,7 @@ int main(int argc, char *argv[])
 		printf("Unable to read()\n");
 		break;
 	    }
-
+// reader outputs the code as four pairs of hex
 // convert to one hex per byte
 	    for (i = 5; i < (5 + 8); i++)
 		sprintf(&hex_tmp[(i - 5) * 2], "%02x", buf[i]);
@@ -188,8 +189,10 @@ int main(int argc, char *argv[])
 		printf("%i,", hex_tmp[i]);
 	    printf("\n");
 #endif
+// send keystrokes
 	    for (i = 0; i < 8; i++)
 		send_keycode(fd, hex_tmp[i]);
+// press enter
 	    send_keycode(fd, KEY_ENTER);
 /*
 	    command[5] = 0x01;
@@ -203,7 +206,8 @@ int main(int argc, char *argv[])
 */
 
 	}			// if cur_dev
-	cur_dev = cur_dev->next;
+// loop all HID devices
+	    cur_dev = cur_dev->next;
 
     }				// while
 
