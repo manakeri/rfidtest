@@ -1,8 +1,12 @@
 #include <linux/input.h>
 #include <linux/uinput.h>
 
+#include <signal.h>
+#include <syslog.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/ipc.h>
+#include <semaphore.h>
 #include <fcntl.h>
 #include <string.h>
 #include <stdlib.h>
@@ -24,6 +28,9 @@ void send_keycode(int fd, int keycode)
     int ecode = 0;
 
     switch (keycode) {
+    case 0x30:
+	ecode = KEY_0;
+	break;
     case 0x31:
 	ecode = KEY_1;
 	break;
@@ -51,10 +58,6 @@ void send_keycode(int fd, int keycode)
     case 0x39:
 	ecode = KEY_9;
 	break;
-    case 0x40:
-	ecode = KEY_0;
-	break;
-
     case 0x61:
 	ecode = KEY_A;
 	break;
@@ -73,7 +76,6 @@ void send_keycode(int fd, int keycode)
     case 0x66:
 	ecode = KEY_F;
 	break;
-
     case 0x1c:
 	ecode = KEY_ENTER;
 	break;
@@ -127,14 +129,20 @@ int main(int argc, char *argv[])
     struct uinput_user_dev uidev;
     char hex_tmp[64];
 
+    sem_t *mysem = sem_open("rfidtestsem", O_CREAT|O_EXCL);
+    if ( mysem == NULL )
+    {
+        die("error: already running\n");
+    }
+
 // create uinput device
     fd = open("/dev/uinput", O_WRONLY);
     if (fd < 0)
 	die("uinput open:");
-// enable uinput key output	
+// enable uinput key output
     if (ioctl(fd, UI_SET_EVBIT, EV_KEY) < 0)
 	die("error: UI_SET_EVBIT");
-// enable way too many keys...	
+// enable way too many keys...
     for (i = KEY_RESERVED; i < KEY_UNKNOWN; i++)
 	if (ioctl(fd, UI_SET_KEYBIT, i) < 0)
 	    die("error: UI_SET_KEYBIT");
@@ -165,35 +173,33 @@ int main(int argc, char *argv[])
 	printf("  Interface:    %d\n", cur_dev->interface_number);
 	printf("\n");
 #endif
-// in case found rfid reader 
+// in case found rfid reader
 	if (cur_dev->vendor_id == 0x1667 && cur_dev->product_id == 0x0026) {
 	    handle = hid_open_path(cur_dev->path);
+	    while (1) {
 // read rfid code
-	    hid_write(handle, command, 64);
-	    hid_read(handle, buf, 64);
-	    res = hid_read(handle, buf, 64);
-	    if (res < 0) {
-		printf("Unable to read()\n");
-		break;
-	    }
+		hid_write(handle, command, 64);
+		hid_read(handle, buf, 64);
+		res = hid_read(handle, buf, 64);
+		if (res < 0)
+		    die("Unable to read rfid code\n");
 // reader outputs the code as four pairs of hex
 // convert to one hex per byte
-	    for (i = 5; i < (5 + 8); i++)
-		sprintf(&hex_tmp[(i - 5) * 2], "%02x", buf[i]);
-
+		for (i = 5; i < (5 + 8); i++)
+		    sprintf(&hex_tmp[(i - 5) * 2], "%02x", buf[i]);
 #ifdef DEBUG
-	    for (i = 0; i < res; i++)
-		printf("%02x,", buf[i]);
-	    printf("\n");
-	    for (i = 0; i < 8; i++)
-		printf("%i,", hex_tmp[i]);
-	    printf("\n");
+		for (i = 0; i < res; i++)
+		    printf("%02x,", buf[i]);
+		printf("\n");
+		for (i = 0; i < 8; i++)
+		    printf("%i,", hex_tmp[i]);
+		printf("\n");
 #endif
 // send keystrokes
-	    for (i = 0; i < 8; i++)
-		send_keycode(fd, hex_tmp[i]);
+		for (i = 0; i < 8; i++)
+		    send_keycode(fd, hex_tmp[i]);
 // press enter
-	    send_keycode(fd, KEY_ENTER);
+		send_keycode(fd, KEY_ENTER);
 /*
 	    command[5] = 0x01;
 	    command[6] = 0x00;
@@ -204,11 +210,11 @@ int main(int argc, char *argv[])
 		break;
 	    }
 */
-
+//      sleep(1);
+	    }			// while 1
 	}			// if cur_dev
 // loop all HID devices
-	    cur_dev = cur_dev->next;
-
+	cur_dev = cur_dev->next;
     }				// while
 
 // destroy uinput device

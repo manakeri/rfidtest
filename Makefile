@@ -1,6 +1,6 @@
 CC=gcc
 CFLAGS=-I. -O2 -Wall
-LIBS=-lhidapi-hidraw
+LIBS=-lhidapi-hidraw -lpthread
 OBJ = rfidtest.o
 
 %.o: %.c
